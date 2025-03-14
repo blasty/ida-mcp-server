@@ -1,5 +1,4 @@
 import click
-from pathlib import Path
 import logging
 import sys
 from .server import serve
@@ -7,7 +6,7 @@ from .server import serve
 @click.command()
 @click.option("-v", "--verbose", count=True)
 def main(verbose: bool) -> None:
-    """MCP IDA Pro Server - IDA Pro functionality for MCP"""
+    """MCP IDA Server - IDA functionality for MCP"""
     import asyncio
 
     logging_level = logging.WARN

@@ -24,7 +24,7 @@ PLUGIN_AUTHOR = "IDA MCP"
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 5000
 
-class IdaMcpServer:
+class IDAMCPServer:
     # SyncWrapper类用于从execute_sync获取返回值
     class SyncWrapper(object):
         def __init__(self):
@@ -427,7 +427,7 @@ class IdaMcpServer:
 
 
 # IDA插件类
-class IdaMcpPlugin(idaapi.plugin_t):
+class IDAMCPPlugin(idaapi.plugin_t):
     flags = idaapi.PLUGIN_KEEP
     comment = "IDA MCP Server Plugin"
     help = "Provides MCP server functionality for IDAPro"
@@ -435,11 +435,11 @@ class IdaMcpPlugin(idaapi.plugin_t):
     wanted_hotkey = PLUGIN_HOTKEY
     
     def __init__(self):
-        super(IdaMcpPlugin, self).__init__()
+        super(IDAMCPPlugin, self).__init__()
         self.server = None
         self.initialized = False
         self.menu_items_added = False
-        print(f"IdaMcpPlugin instance created")
+        print(f"IDAMCPPlugin instance created")
     
     def init(self):
         """插件初始化"""
@@ -554,7 +554,7 @@ class IdaMcpPlugin(idaapi.plugin_t):
         
         try:
             print("Creating MCP Server instance...")
-            self.server = IdaMcpServer()
+            self.server = IDAMCPServer()
             print("Starting MCP Server...")
             if self.server.start():
                 print("MCP Server started successfully")
@@ -613,4 +613,4 @@ class IdaMcpPlugin(idaapi.plugin_t):
 
 # 注册插件
 def PLUGIN_ENTRY():
-    return IdaMcpPlugin()
+    return IDAMCPPlugin()
