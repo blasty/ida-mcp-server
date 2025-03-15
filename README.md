@@ -27,6 +27,11 @@ After installation, you can run it as a script using:
 python -m mcp_server_ida
 ```
 
+### IDA-Side
+
+Copy repository/plugin/ida_mcp_server_plugin.py into IDAs plugin directory.
+
+
 ## Configuration
 
 ### Usage with Claude Desktop
