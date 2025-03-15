@@ -14,6 +14,7 @@ from mcp.types import (
 from enum import Enum
 from pydantic import BaseModel
 
+# 修改请求模型
 class GetFunctionAssembly(BaseModel):
     function_name: str
 
@@ -23,10 +24,19 @@ class GetFunctionDecompiled(BaseModel):
 class GetGlobalVariable(BaseModel):
     variable_name: str
 
+class GetCurrentFunctionAssembly(BaseModel):
+    pass
+
+class GetCurrentFunctionDecompiled(BaseModel):
+    pass
+
+
 class IDATools(str, Enum):
     GET_FUNCTION_ASSEMBLY = "ida_get_function_assembly"
     GET_FUNCTION_DECOMPILED = "ida_get_function_decompiled"
     GET_GLOBAL_VARIABLE = "ida_get_global_variable"
+    GET_CURRENT_FUNCTION_ASSEMBLY = "ida_get_current_function_assembly"
+    GET_CURRENT_FUNCTION_DECOMPILED = "ida_get_current_function_decompiled"
 
 # IDA Pro通信处理器
 class IDAProCommunicator:
@@ -284,6 +294,63 @@ class IDAProFunctions:
         except Exception as e:
             self.logger.error(f"获取全局变量时出错: {str(e)}", exc_info=True)
             return f"Error retrieving global variable '{variable_name}': {str(e)}"
+    
+    def get_current_function_assembly(self) -> str:
+        """获取当前光标所在函数的汇编代码"""
+        try:
+            response = self.communicator.send_request(
+                "get_current_function_assembly", 
+                {}
+            )
+            
+            if "error" in response:
+                return f"Error retrieving assembly for current function: {response['error']}"
+            
+            assembly = response.get("assembly")
+            function_name = response.get("function_name", "Current function")
+            
+            # 验证assembly是字符串类型
+            if assembly is None:
+                return f"Error: No assembly data returned for current function"
+            if not isinstance(assembly, str):
+                self.logger.warning(f"Assembly数据类型不是字符串而是 {type(assembly).__name__}，尝试转换")
+                assembly = str(assembly)
+            
+            return f"Assembly code for function '{function_name}':\n{assembly}"
+        except Exception as e:
+            self.logger.error(f"获取当前函数汇编时出错: {str(e)}", exc_info=True)
+            return f"Error retrieving assembly for current function: {str(e)}"
+    
+    def get_current_function_decompiled(self) -> str:
+        """获取当前光标所在函数的反编译代码"""
+        try:
+            response = self.communicator.send_request(
+                "get_current_function_decompiled", 
+                {}
+            )
+            
+            if "error" in response:
+                return f"Error retrieving decompiled code for current function: {response['error']}"
+            
+            decompiled_code = response.get("decompiled_code")
+            function_name = response.get("function_name", "Current function")
+            
+            # 详细的类型检查和转换
+            if decompiled_code is None:
+                return f"Error: No decompiled code returned for current function"
+                
+            # 确保结果是字符串
+            if not isinstance(decompiled_code, str):
+                self.logger.warning(f"反编译代码类型不是字符串而是 {type(decompiled_code).__name__}，尝试转换")
+                try:
+                    decompiled_code = str(decompiled_code)
+                except Exception as e:
+                    return f"Error: Failed to convert decompiled code: {str(e)}"
+            
+            return f"Decompiled code for function '{function_name}':\n{decompiled_code}"
+        except Exception as e:
+            self.logger.error(f"获取当前函数反编译代码时出错: {str(e)}", exc_info=True)
+            return f"Error retrieving decompiled code for current function: {str(e)}"
 
 async def serve() -> None:
     """MCP服务器主入口"""
@@ -323,6 +390,16 @@ async def serve() -> None:
                 description="Get information about a global variable by name",
                 inputSchema=GetGlobalVariable.schema(),
             ),
+            Tool(
+                name=IDATools.GET_CURRENT_FUNCTION_ASSEMBLY,
+                description="Get assembly code for the function at the current cursor position",
+                inputSchema=GetCurrentFunctionAssembly.schema(),
+            ),
+            Tool(
+                name=IDATools.GET_CURRENT_FUNCTION_DECOMPILED,
+                description="Get decompiled pseudocode for the function at the current cursor position",
+                inputSchema=GetCurrentFunctionDecompiled.schema(),
+            ),
         ]
 
     @server.call_tool()
@@ -356,6 +433,20 @@ async def serve() -> None:
                     return [TextContent(
                         type="text",
                         text=variable_info
+                    )]
+                    
+                case IDATools.GET_CURRENT_FUNCTION_ASSEMBLY:
+                    assembly = ida_functions.get_current_function_assembly()
+                    return [TextContent(
+                        type="text",
+                        text=assembly
+                    )]
+                
+                case IDATools.GET_CURRENT_FUNCTION_DECOMPILED:
+                    decompiled = ida_functions.get_current_function_decompiled()
+                    return [TextContent(
+                        type="text",
+                        text=decompiled
                     )]
 
                 case _:
