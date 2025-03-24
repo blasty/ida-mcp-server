@@ -1,7 +1,7 @@
 # IDA MCP Server
 
 > [!NOTE]
-> The idalib mode is under development, and it will not require installing the IDA plugin or opening IDA (idalib is available from IDA Pro 9.0+).
+> The idalib mode is under development, and it will not require installing the IDA plugin or running IDA (idalib is available from IDA Pro 9.0+).
 
 ## Overview
 
