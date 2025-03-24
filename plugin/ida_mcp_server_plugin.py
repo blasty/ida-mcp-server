@@ -212,8 +212,29 @@ class IDAMCPServer:
                     elif request_type == "get_current_function_decompiled":
                         result = self.get_current_function_decompiled()
                         response.update(result)
+                    elif request_type == "rename_global_variable":
+                        result = self.rename_global_variable(request_data)
+                        response.update(result)
+                    elif request_type == "rename_function":
+                        result = self.rename_function(request_data)
+                        response.update(result)
+                    elif request_type == "add_comment":
+                        result = self.add_comment(request_data)
+                        response.update(result)
+                    elif request_type == "rename_local_variable":
+                        result = self.rename_local_variable(request_data)
+                        response.update(result)
+                    elif request_type == "add_function_comment":
+                        result = self.add_function_comment(request_data)
+                        response.update(result)
                     elif request_type == "ping":
                         response["status"] = "pong"
+                    elif request_type == "add_pseudocode_line_comment":
+                        result = self.add_pseudocode_line_comment(request_data)
+                        response.update(result)
+                    elif request_type == "refresh_view":
+                        result = self.refresh_view(request_data)
+                        response.update(result)
                     else:
                         response["error"] = f"Unknown request type: {request_type}"
                     
@@ -547,6 +568,387 @@ class IDAMCPServer:
             print(f"Error decompiling current function: {str(e)}")
             traceback.print_exc()
             return {"error": str(e)}
+
+    def rename_global_variable(self, data):
+        """重命名全局变量"""
+        old_name = data.get("old_name", "")
+        new_name = data.get("new_name", "")
+        
+        # 使用SyncWrapper来获取结果
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(lambda: wrapper(self._rename_global_variable_impl, old_name, new_name), idaapi.MFF_WRITE)
+        return wrapper.result
+
+    def _rename_global_variable_impl(self, old_name, new_name):
+        """在IDA主线程中实现重命名全局变量的逻辑"""
+        try:
+            # 获取变量地址
+            var_addr = ida_name.get_name_ea(0, old_name)
+            if var_addr == idaapi.BADADDR:
+                return {"success": False, "message": f"Variable '{old_name}' not found"}
+            
+            # 检查新名称是否已被使用
+            if ida_name.get_name_ea(0, new_name) != idaapi.BADADDR:
+                return {"success": False, "message": f"Name '{new_name}' is already in use"}
+            
+            # 尝试重命名
+            if not ida_name.set_name(var_addr, new_name):
+                return {"success": False, "message": f"Failed to rename variable, possibly due to invalid name format or other IDA restrictions"}
+            
+            # 刷新视图
+            self._refresh_view_impl()
+            
+            return {"success": True, "message": f"Variable renamed from '{old_name}' to '{new_name}' at address {hex(var_addr)}"}
+        
+        except Exception as e:
+            print(f"Error renaming variable: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": str(e)}
+
+    def rename_function(self, data):
+        """重命名函数"""
+        old_name = data.get("old_name", "")
+        new_name = data.get("new_name", "")
+        
+        # 使用SyncWrapper来获取结果
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(lambda: wrapper(self._rename_function_impl, old_name, new_name), idaapi.MFF_WRITE)
+        return wrapper.result
+
+    def _rename_function_impl(self, old_name, new_name):
+        """在IDA主线程中实现重命名函数的逻辑"""
+        try:
+            # 获取函数地址
+            func_addr = ida_name.get_name_ea(0, old_name)
+            if func_addr == idaapi.BADADDR:
+                return {"success": False, "message": f"Function '{old_name}' not found"}
+            
+            # 检查是否是函数
+            func = ida_funcs.get_func(func_addr)
+            if not func:
+                return {"success": False, "message": f"'{old_name}' is not a function"}
+            
+            # 检查新名称是否已被使用
+            if ida_name.get_name_ea(0, new_name) != idaapi.BADADDR:
+                return {"success": False, "message": f"Name '{new_name}' is already in use"}
+            
+            # 尝试重命名
+            if not ida_name.set_name(func_addr, new_name):
+                return {"success": False, "message": f"Failed to rename function, possibly due to invalid name format or other IDA restrictions"}
+            
+            # 刷新视图
+            self._refresh_view_impl()
+            
+            return {"success": True, "message": f"Function renamed from '{old_name}' to '{new_name}' at address {hex(func_addr)}"}
+        
+        except Exception as e:
+            print(f"Error renaming function: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": str(e)}
+
+    def add_comment(self, data):
+        """添加注释"""
+        address = data.get("address", "")
+        comment = data.get("comment", "")
+        is_repeatable = data.get("is_repeatable", False)
+        
+        # 使用SyncWrapper来获取结果
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(lambda: wrapper(self._add_comment_impl, address, comment, is_repeatable), idaapi.MFF_WRITE)
+        return wrapper.result
+
+    def _add_comment_impl(self, address, comment, is_repeatable):
+        """在IDA主线程中实现添加注释的逻辑"""
+        try:
+            # 将地址字符串转换为整数
+            if isinstance(address, str):
+                if address.startswith("0x"):
+                    addr = int(address, 16)
+                else:
+                    try:
+                        addr = int(address, 16)  # 尝试作为十六进制解析
+                    except ValueError:
+                        try:
+                            addr = int(address)  # 尝试作为十进制解析
+                        except ValueError:
+                            return {"success": False, "message": f"Invalid address format: {address}"}
+            else:
+                addr = address
+            
+            # 检查地址是否有效
+            if addr == idaapi.BADADDR or not ida_bytes.is_loaded(addr):
+                return {"success": False, "message": f"Invalid or unloaded address: {hex(addr)}"}
+            
+            # 添加注释
+            result = idc.set_cmt(addr, comment, is_repeatable)
+            if result:
+                # 刷新视图
+                self._refresh_view_impl()
+                comment_type = "repeatable" if is_repeatable else "regular"
+                return {"success": True, "message": f"Added {comment_type} comment at address {hex(addr)}"}
+            else:
+                return {"success": False, "message": f"Failed to add comment at address {hex(addr)}"}
+        
+        except Exception as e:
+            print(f"Error adding comment: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": str(e)}
+
+    def rename_local_variable(self, data):
+        """重命名函数内的局部变量"""
+        function_name = data.get("function_name", "")
+        old_name = data.get("old_name", "")
+        new_name = data.get("new_name", "")
+        
+        # 使用SyncWrapper来获取结果
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(lambda: wrapper(self._rename_local_variable_impl, function_name, old_name, new_name), idaapi.MFF_WRITE)
+        return wrapper.result
+
+    def _rename_local_variable_impl(self, function_name, old_name, new_name):
+        """在IDA主线程中实现重命名函数内局部变量的逻辑"""
+        try:
+            # 参数验证
+            if not function_name:
+                return {"success": False, "message": "Function name cannot be empty"}
+            if not old_name:
+                return {"success": False, "message": "Old variable name cannot be empty"}
+            if not new_name:
+                return {"success": False, "message": "New variable name cannot be empty"}
+            
+            # 获取函数地址
+            func_addr = ida_name.get_name_ea(0, function_name)
+            if func_addr == idaapi.BADADDR:
+                return {"success": False, "message": f"Function '{function_name}' not found"}
+            
+            # 检查是否是函数
+            func = ida_funcs.get_func(func_addr)
+            if not func:
+                return {"success": False, "message": f"'{function_name}' is not a function"}
+            
+            # 检查反编译器是否可用
+            if not ida_hexrays.init_hexrays_plugin():
+                return {"success": False, "message": "Hex-Rays decompiler is not available"}
+            
+            # 获取反编译结果
+            cfunc = ida_hexrays.decompile(func_addr)
+            if not cfunc:
+                return {"success": False, "message": f"Failed to decompile function '{function_name}'"}
+            
+            # 找到要重命名的局部变量
+            found = False
+            renamed = False
+            lvar = None
+            
+            # 遍历所有局部变量
+            lvars = cfunc.get_lvars()
+            for i in range(lvars.size()):
+                v = lvars[i]
+                if v.name == old_name:
+                    lvar = v
+                    found = True
+                    break
+            
+            if not found:
+                return {"success": False, "message": f"Local variable '{old_name}' not found in function '{function_name}'"}
+            
+            # 重命名局部变量
+            if ida_hexrays.rename_lvar(cfunc.entry_ea, lvar.name, new_name):
+                renamed = True
+            
+            if renamed:
+                # 刷新视图
+                self._refresh_view_impl()
+                return {"success": True, "message": f"Local variable renamed from '{old_name}' to '{new_name}' in function '{function_name}'"}
+            else:
+                return {"success": False, "message": f"Failed to rename local variable from '{old_name}' to '{new_name}', possibly due to invalid name format or other IDA restrictions"}
+        
+        except Exception as e:
+            print(f"Error renaming local variable: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": str(e)}
+
+    def add_function_comment(self, data):
+        """添加函数注释"""
+        function_name = data.get("function_name", "")
+        comment = data.get("comment", "")
+        is_repeatable = data.get("is_repeatable", False)
+        
+        # 使用SyncWrapper来获取结果
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(lambda: wrapper(self._add_function_comment_impl, function_name, comment, is_repeatable), idaapi.MFF_WRITE)
+        return wrapper.result
+
+    def _add_function_comment_impl(self, function_name, comment, is_repeatable):
+        """在IDA主线程中实现添加函数注释的逻辑"""
+        try:
+            # 参数验证
+            if not function_name:
+                return {"success": False, "message": "Function name cannot be empty"}
+            if not comment:
+                # 允许空注释，表示清除注释
+                comment = ""
+            
+            # 获取函数地址
+            func_addr = ida_name.get_name_ea(0, function_name)
+            if func_addr == idaapi.BADADDR:
+                return {"success": False, "message": f"Function '{function_name}' not found"}
+            
+            # 检查是否是函数
+            func = ida_funcs.get_func(func_addr)
+            if not func:
+                return {"success": False, "message": f"'{function_name}' is not a function"}
+            
+            # 添加函数注释
+            # is_repeatable为True表示在每次引用这个函数的地方都显示注释
+            # is_repeatable为False表示仅在函数定义处显示注释
+            result = idc.set_func_cmt(func_addr, comment, is_repeatable)
+            
+            if result:
+                # 刷新视图
+                self._refresh_view_impl()
+                comment_type = "repeatable" if is_repeatable else "regular"
+                return {"success": True, "message": f"Added {comment_type} comment to function '{function_name}'"}
+            else:
+                return {"success": False, "message": f"Failed to add comment to function '{function_name}'"}
+        
+        except Exception as e:
+            print(f"Error adding function comment: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": str(e)}
+
+    def add_pseudocode_line_comment(self, data):
+        """Add a comment to a specific line in the function's decompiled pseudocode"""
+        function_name = data.get("function_name", "")
+        line_number = data.get("line_number", 0)
+        comment = data.get("comment", "")
+        is_repeatable = data.get("is_repeatable", False)
+        
+        # Use SyncWrapper to get results
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(
+            lambda: wrapper(self._add_pseudocode_line_comment_impl, function_name, line_number, comment, is_repeatable),
+            idaapi.MFF_WRITE
+        )
+        return wrapper.result
+
+    def _add_pseudocode_line_comment_impl(self, function_name, line_number, comment, is_repeatable):
+        """
+        Implement adding a comment to a specific line of pseudocode in the IDA main thread
+        Warning: incomplete implementation, only works for simple cases
+        """
+        try:
+            # Parameter validation
+            if not function_name:
+                return {"success": False, "message": "Function name cannot be empty"}
+            if line_number <= 0:
+                return {"success": False, "message": "Line number must be positive"}
+            if not comment:
+                # Allow empty comment to clear existing comment
+                comment = ""
+            
+            # Get function address
+            func_addr = ida_name.get_name_ea(0, function_name)
+            if func_addr == idaapi.BADADDR:
+                return {"success": False, "message": f"Function '{function_name}' not found"}
+            
+            # Check if it's a function
+            func = ida_funcs.get_func(func_addr)
+            if not func:
+                return {"success": False, "message": f"'{function_name}' is not a function"}
+            
+            # Check if decompiler is available
+            if not ida_hexrays.init_hexrays_plugin():
+                return {"success": False, "message": "Hex-Rays decompiler is not available"}
+            
+            # Get decompilation result
+            cfunc = ida_hexrays.decompile(func_addr)
+            if not cfunc:
+                return {"success": False, "message": f"Failed to decompile function '{function_name}'"}
+            
+            # Get pseudocode
+            pseudocode = cfunc.get_pseudocode()
+            if not pseudocode or pseudocode.size() == 0:
+                return {"success": False, "message": "No pseudocode generated"}
+            
+            # Check if line number is valid
+            if line_number > pseudocode.size():
+                return {"success": False, "message": f"Line number {line_number} is out of range (max is {pseudocode.size()})"}
+            
+            # Line numbers in the API are 0-based, but user input is 1-based
+            actual_line_index = line_number - 1
+            
+            # Get the ctree item for the specified line
+            line_item = pseudocode[actual_line_index]
+            tree_item = cfunc.treeitems[actual_line_index]
+            # print(cfunc.treeitems.count())
+            print(tree_item, tree_item.ea)
+            if not line_item:
+                return {"success": False, "message": f"Cannot access line {line_number}"}
+            
+            # Create a treeloc_t object for the comment location
+            loc = ida_hexrays.treeloc_t()
+            loc.ea = tree_item.ea
+            loc.itp = ida_hexrays.ITP_SEMI  # Comment position (can adjust as needed)
+
+            for tree_item in cfunc.treeitems:
+                print(tree_item.index)
+            
+            # Set the comment
+            cfunc.set_user_cmt(loc, comment)
+            cfunc.save_user_cmts()
+            
+            # 刷新视图
+            self._refresh_view_impl()
+
+            comment_type = "repeatable" if is_repeatable else "regular"
+            return {
+                "success": True, 
+                "message": f"Added {comment_type} comment to line {line_number} at address {hex(line_ea)}"
+            }    
+        
+        except Exception as e:
+            print(f"Error adding pseudocode line comment: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": str(e)}
+
+    def refresh_view(self, data):
+        """刷新IDA Pro视图"""
+        # 使用SyncWrapper来获取结果
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(lambda: wrapper(self._refresh_view_impl), idaapi.MFF_WRITE)
+        return wrapper.result
+
+    def _refresh_view_impl(self):
+        """在IDA主线程中实现刷新视图的逻辑"""
+        try:
+            # 刷新反汇编视图
+            idaapi.refresh_idaview_anyway()
+            
+            # 刷新反编译视图
+            current_widget = idaapi.get_current_widget()
+            if current_widget:
+                widget_type = idaapi.get_widget_type(current_widget)
+                if widget_type == idaapi.BWN_PSEUDOCODE:
+                    # 如果当前是伪代码视图，刷新它
+                    vu = idaapi.get_widget_vdui(current_widget)
+                    if vu:
+                        vu.refresh_view(True)
+            
+            # 尝试查找并刷新所有打开的伪代码窗口
+            for i in range(5):  # 检查多个可能的伪代码窗口
+                widget_name = f"Pseudocode-{chr(65+i)}"  # Pseudocode-A, Pseudocode-B, ...
+                widget = idaapi.find_widget(widget_name)
+                if widget:
+                    vu = idaapi.get_widget_vdui(widget)
+                    if vu:
+                        vu.refresh_view(True)
+            
+            return {"success": True, "message": "Views refreshed successfully"}
+        except Exception as e:
+            print(f"Error refreshing views: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": str(e)}
 
 # IDA插件类
 class IDAMCPPlugin(idaapi.plugin_t):

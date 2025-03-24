@@ -30,6 +30,34 @@ class GetCurrentFunctionAssembly(BaseModel):
 class GetCurrentFunctionDecompiled(BaseModel):
     pass
 
+class RenameLocalVariable(BaseModel):
+    function_name: str
+    old_name: str
+    new_name: str
+
+class RenameGlobalVariable(BaseModel):
+    old_name: str
+    new_name: str
+
+class RenameFunction(BaseModel):
+    old_name: str
+    new_name: str
+
+class AddComment(BaseModel):
+    address: str  # 可以是十六进制地址字符串
+    comment: str
+    is_repeatable: bool = False  # 是否为可重复注释
+
+class AddFunctionComment(BaseModel):
+    function_name: str
+    comment: str
+    is_repeatable: bool = False  # 是否为可重复注释
+
+class AddPseudocodeLineComment(BaseModel):
+    function_name: str
+    line_number: int  # Line number in the pseudocode
+    comment: str
+    is_repeatable: bool = False  # Whether comment should be repeated at all occurrences
 
 class IDATools(str, Enum):
     GET_FUNCTION_ASSEMBLY = "ida_get_function_assembly"
@@ -37,6 +65,12 @@ class IDATools(str, Enum):
     GET_GLOBAL_VARIABLE = "ida_get_global_variable"
     GET_CURRENT_FUNCTION_ASSEMBLY = "ida_get_current_function_assembly"
     GET_CURRENT_FUNCTION_DECOMPILED = "ida_get_current_function_decompiled"
+    RENAME_LOCAL_VARIABLE = "ida_rename_local_variable"
+    RENAME_GLOBAL_VARIABLE = "ida_rename_global_variable"
+    RENAME_FUNCTION = "ida_rename_function"
+    ADD_COMMENT = "ida_add_comment"
+    ADD_FUNCTION_COMMENT = "ida_add_function_comment"
+    ADD_PSEUDOCODE_LINE_COMMENT = "ida_add_pseudocode_line_comment"
 
 # IDA Pro通信处理器
 class IDAProCommunicator:
@@ -352,6 +386,148 @@ class IDAProFunctions:
             self.logger.error(f"获取当前函数反编译代码时出错: {str(e)}", exc_info=True)
             return f"Error retrieving decompiled code for current function: {str(e)}"
 
+    def rename_local_variable(self, function_name: str, old_name: str, new_name: str) -> str:
+        """重命名函数内的局部变量"""
+        try:
+            response = self.communicator.send_request(
+                "rename_local_variable", 
+                {"function_name": function_name, "old_name": old_name, "new_name": new_name}
+            )
+            
+            if "error" in response:
+                return f"Error renaming local variable from '{old_name}' to '{new_name}' in function '{function_name}': {response['error']}"
+            
+            success = response.get("success", False)
+            message = response.get("message", "")
+            
+            if success:
+                return f"Successfully renamed local variable from '{old_name}' to '{new_name}' in function '{function_name}': {message}"
+            else:
+                return f"Failed to rename local variable from '{old_name}' to '{new_name}' in function '{function_name}': {message}"
+        except Exception as e:
+            self.logger.error(f"重命名局部变量时出错: {str(e)}", exc_info=True)
+            return f"Error renaming local variable from '{old_name}' to '{new_name}' in function '{function_name}': {str(e)}"
+
+    def rename_global_variable(self, old_name: str, new_name: str) -> str:
+        """重命名全局变量"""
+        try:
+            response = self.communicator.send_request(
+                "rename_global_variable", 
+                {"old_name": old_name, "new_name": new_name}
+            )
+            
+            if "error" in response:
+                return f"Error renaming global variable from '{old_name}' to '{new_name}': {response['error']}"
+            
+            success = response.get("success", False)
+            message = response.get("message", "")
+            
+            if success:
+                return f"Successfully renamed global variable from '{old_name}' to '{new_name}': {message}"
+            else:
+                return f"Failed to rename global variable from '{old_name}' to '{new_name}': {message}"
+        except Exception as e:
+            self.logger.error(f"重命名全局变量时出错: {str(e)}", exc_info=True)
+            return f"Error renaming global variable from '{old_name}' to '{new_name}': {str(e)}"
+
+    def rename_function(self, old_name: str, new_name: str) -> str:
+        """重命名函数"""
+        try:
+            response = self.communicator.send_request(
+                "rename_function", 
+                {"old_name": old_name, "new_name": new_name}
+            )
+            
+            if "error" in response:
+                return f"Error renaming function from '{old_name}' to '{new_name}': {response['error']}"
+            
+            success = response.get("success", False)
+            message = response.get("message", "")
+            
+            
+            if success:
+                return f"Successfully renamed function from '{old_name}' to '{new_name}': {message}"
+            else:
+                return f"Failed to rename function from '{old_name}' to '{new_name}': {message}"
+        except Exception as e:
+            self.logger.error(f"重命名函数时出错: {str(e)}", exc_info=True)
+            return f"Error renaming function from '{old_name}' to '{new_name}': {str(e)}"
+
+    def add_comment(self, address: str, comment: str, is_repeatable: bool = False) -> str:
+        """添加注释"""
+        try:
+            response = self.communicator.send_request(
+                "add_comment", 
+                {"address": address, "comment": comment, "is_repeatable": is_repeatable}
+            )
+            
+            if "error" in response:
+                return f"Error adding comment at address '{address}': {response['error']}"
+            
+            success = response.get("success", False)
+            message = response.get("message", "")
+            
+            if success:
+                comment_type = "repeatable" if is_repeatable else "regular"
+                return f"Successfully added {comment_type} comment at address '{address}': {message}"
+            else:
+                return f"Failed to add comment at address '{address}': {message}"
+        except Exception as e:
+            self.logger.error(f"添加注释时出错: {str(e)}", exc_info=True)
+            return f"Error adding comment at address '{address}': {str(e)}"
+
+    def add_function_comment(self, function_name: str, comment: str, is_repeatable: bool = False) -> str:
+        """添加函数注释"""
+        try:
+            response = self.communicator.send_request(
+                "add_function_comment", 
+                {"function_name": function_name, "comment": comment, "is_repeatable": is_repeatable}
+            )
+            
+            if "error" in response:
+                return f"Error adding comment to function '{function_name}': {response['error']}"
+            
+            success = response.get("success", False)
+            message = response.get("message", "")
+            
+            if success:
+                comment_type = "repeatable" if is_repeatable else "regular"
+                return f"Successfully added {comment_type} comment to function '{function_name}': {message}"
+            else:
+                return f"Failed to add comment to function '{function_name}': {message}"
+        except Exception as e:
+            self.logger.error(f"添加函数注释时出错: {str(e)}", exc_info=True)
+            return f"Error adding comment to function '{function_name}': {str(e)}"
+
+    def add_pseudocode_line_comment(self, function_name: str, line_number: int, comment: str, is_repeatable: bool = False) -> str:
+        """Add a comment to a specific line in the function's decompiled pseudocode"""
+        try:
+            response = self.communicator.send_request(
+                "add_pseudocode_line_comment",
+                {
+                    "function_name": function_name,
+                    "line_number": line_number,
+                    "comment": comment,
+                    "is_repeatable": is_repeatable
+                }
+            )
+            
+            if "error" in response:
+                return f"Error adding comment to line {line_number} in function '{function_name}': {response['error']}"
+            
+            success = response.get("success", False)
+            message = response.get("message", "")
+            
+            if success:
+                comment_type = "repeatable" if is_repeatable else "regular"
+                return f"Successfully added {comment_type} comment to line {line_number} in function '{function_name}': {message}"
+            else:
+                return f"Failed to add comment to line {line_number} in function '{function_name}': {message}"
+        except Exception as e:
+            self.logger.error(f"添加伪代码行注释时出错: {str(e)}", exc_info=True)
+            return f"Error adding comment to line {line_number} in function '{function_name}': {str(e)}"
+
+
 async def serve() -> None:
     """MCP服务器主入口"""
     logger = logging.getLogger(__name__)
@@ -400,6 +576,36 @@ async def serve() -> None:
                 description="Get decompiled pseudocode for the function at the current cursor position",
                 inputSchema=GetCurrentFunctionDecompiled.schema(),
             ),
+            Tool(
+                name=IDATools.RENAME_LOCAL_VARIABLE,
+                description="Rename a local variable within a function in the IDA database",
+                inputSchema=RenameLocalVariable.schema(),
+            ),
+            Tool(
+                name=IDATools.RENAME_GLOBAL_VARIABLE,
+                description="Rename a global variable in the IDA database",
+                inputSchema=RenameGlobalVariable.schema(),
+            ),
+            Tool(
+                name=IDATools.RENAME_FUNCTION,
+                description="Rename a function in the IDA database",
+                inputSchema=RenameFunction.schema(),
+            ),
+            Tool(
+                name=IDATools.ADD_COMMENT,
+                description="Add a comment at a specific address in the IDA database",
+                inputSchema=AddComment.schema(),
+            ),
+            Tool(
+                name=IDATools.ADD_FUNCTION_COMMENT,
+                description="Add a comment to a function in the IDA database",
+                inputSchema=AddFunctionComment.schema(),
+            ),
+            Tool(
+                name=IDATools.ADD_PSEUDOCODE_LINE_COMMENT,
+                description="Add a comment to a specific line in the function's decompiled pseudocode",
+                inputSchema=AddPseudocodeLineComment.schema(),
+            ),
         ]
 
     @server.call_tool()
@@ -447,6 +653,71 @@ async def serve() -> None:
                     return [TextContent(
                         type="text",
                         text=decompiled
+                    )]
+
+                case IDATools.RENAME_LOCAL_VARIABLE:
+                    result = ida_functions.rename_local_variable(
+                        arguments["function_name"],
+                        arguments["old_name"], 
+                        arguments["new_name"]
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+
+                case IDATools.RENAME_GLOBAL_VARIABLE:
+                    result = ida_functions.rename_global_variable(
+                        arguments["old_name"], 
+                        arguments["new_name"]
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+
+                case IDATools.RENAME_FUNCTION:
+                    result = ida_functions.rename_function(
+                        arguments["old_name"], 
+                        arguments["new_name"]
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+
+                case IDATools.ADD_COMMENT:
+                    result = ida_functions.add_comment(
+                        arguments["address"], 
+                        arguments["comment"], 
+                        arguments.get("is_repeatable", False)
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+
+                case IDATools.ADD_FUNCTION_COMMENT:
+                    result = ida_functions.add_function_comment(
+                        arguments["function_name"], 
+                        arguments["comment"], 
+                        arguments.get("is_repeatable", False)
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+
+                case IDATools.ADD_PSEUDOCODE_LINE_COMMENT:
+                    result = ida_functions.add_pseudocode_line_comment(
+                        arguments["function_name"],
+                        arguments["line_number"],
+                        arguments["comment"],
+                        arguments.get("is_repeatable", False)
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
                     )]
 
                 case _:
