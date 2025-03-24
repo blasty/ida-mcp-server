@@ -1,5 +1,8 @@
 # IDA MCP Server
 
+> [!NOTE]
+> The idalib mode is under development, and it will not require installing the IDA plugin or opening IDA (idalib is available from IDA Pro 9.0+).
+
 ## Overview
 
 A Model Context Protocol server for IDA interaction and automation. This server provides tools to read IDA database via Large Language Models.
