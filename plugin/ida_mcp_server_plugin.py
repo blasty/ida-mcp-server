@@ -44,6 +44,19 @@ class IDACommunicator:
         pass
 
 
+class IDAPrinter(idaapi.text_sink_t):
+    def __init__(self):
+        try:
+            idaapi.text_sink_t.__init__(self)
+        except AttributeError:
+            pass
+        self.lines = []
+
+    def _print(self, thing):
+        self.lines.append(thing)
+        return 0
+
+
 class IDAMCPServer:
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT):
         self.host = host
@@ -176,6 +189,8 @@ class IDAMCPServer:
             "function_comment_add": self.function_comment_add,
             "pseudocode_comment_add": self.pseudocode_comment_add,
             "view_refresh": self.view_refresh,
+            "struct_definition_get": self.struct_definition_get,
+            "struct_definition_set": self.struct_definition_set,
         }
 
         try:
@@ -359,6 +374,65 @@ class IDAMCPServer:
             return {"decompiled_code": result}
         except Exception as e:
             print(f"Error decompiling function: {str(e)}")
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def struct_definition_get(self, data):
+        struct_name = data.get("struct_name", "")
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(
+            lambda: wrapper(self._struct_definition_get_impl, struct_name),
+            idaapi.MFF_READ,
+        )
+        return wrapper.result
+
+    def _struct_definition_get_impl(self, struct_name):
+        try:
+            struct_ordinal = idaapi.get_type_ordinal(idaapi.cvar.idati, struct_name)
+            if struct_ordinal == 0:
+                return {"error": f"Structure '{struct_name}' not found"}
+            p = IDAPrinter()
+            idaapi.print_decls(p, idaapi.cvar.idati, [struct_ordinal], 0)
+            # the first line contains a comment with the struct ordinal, skip it
+            return {"struct_definition": "\n".join(p.lines[1:])}
+        except Exception as e:
+            print(f"Error getting struct definition: {str(e)}")
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def struct_definition_set(self, data):
+        struct_name = data.get("struct_name", "")
+        struct_definition = data.get("struct_definition", "")
+
+        wrapper = IDASyncWrapper()
+        idaapi.execute_sync(
+            lambda: wrapper(
+                self._struct_definition_set_impl, struct_name, struct_definition
+            ),
+            idaapi.MFF_WRITE,
+        )
+        return wrapper.result
+
+    def _struct_definition_set_impl(self, struct_name, struct_definition):
+        try:
+            struct_definition = struct_definition.strip()
+            # Ensure the definition ends with a semicolon
+            if not struct_definition.endswith(";"):
+                struct_definition += ";"
+            # Make sure the struct definition is valid
+            idc.parse_decl(struct_definition, 0)
+
+            # Delete existing structure if it exists
+            type_id = idaapi.get_type_ordinal(idaapi.cvar.idati, struct_name)
+            if type_id != 0:
+                idaapi.del_named_type(idaapi.cvar.idati, struct_name, idaapi.NTF_TYPE)
+
+            # Define the structure again
+            idc.set_local_type(-1, struct_definition, 0)
+
+            return {"success": True}
+        except Exception as e:
+            print(f"Error setting struct definition: {str(e)}")
             traceback.print_exc()
             return {"error": str(e)}
 

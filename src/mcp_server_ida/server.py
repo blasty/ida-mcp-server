@@ -70,6 +70,15 @@ class PseudocodeCommentAdd(BaseModel):
     is_repeatable: bool = False
 
 
+class StructDefinitionGet(BaseModel):
+    struct_name: str
+
+
+class StructDefinitionSet(BaseModel):
+    struct_name: str
+    struct_definition: str
+
+
 class IDATools(str, Enum):
     VARIABLE_GLOBAL_GET = "ida_variable_global_get"
     VARIABLE_GLOBAL_RENAME = "ida_variable_global_rename"
@@ -82,6 +91,8 @@ class IDATools(str, Enum):
     FUNCTION_COMMENT_ADD = "ida_function_comment_add"
     ADDRESS_COMMENT_ADD = "ida_address_comment_add"
     PSEUDOCODE_COMMENT_ADD = "ida_pseudocode_comment_add"
+    STRUCT_DEFINITION_GET = "ida_struct_definition_get"
+    STRUCT_DEFINITION_SET = "ida_struct_definition_set"
 
 
 class IDAProCommunicator:
@@ -346,7 +357,7 @@ class IDAProFunctions:
                 return f"Error: No assembly data returned for current function"
             if not isinstance(assembly, str):
                 self.logger.warning(
-                    f"expected string, got {type(assembly).__name__}，attempting conversion.."
+                    f"expected string, got {type(assembly).__name__}, attempting conversion.."
                 )
                 assembly = str(assembly)
 
@@ -554,6 +565,50 @@ class IDAProFunctions:
             )
             return f"Error adding comment to line {line_number} in function '{function_name}': {str(e)}"
 
+    def struct_definition_get(self, struct_name: str) -> str:
+        try:
+            response = self.communicator.send_request(
+                "struct_definition_get", {"struct_name": struct_name}
+            )
+
+            self.logger.debug(f"response: {response}")
+
+            if "error" in response:
+                return f"Error retrieving struct definition for struct '{struct_name}': {response['error']}"
+
+            struct_definition = response.get("struct_definition")
+
+            if struct_definition is None:
+                return f"Error: No struct definition returned for '{struct_name}'"
+
+            return f"Definition for struct '{struct_name}':\n{struct_definition}"
+        except Exception as e:
+            self.logger.error(f"error: {str(e)}", exc_info=True)
+            return f"Error retrieving definition for struct '{struct_name}': {str(e)}"
+
+    def struct_definition_set(self, struct_name: str, struct_definition: str) -> str:
+        try:
+            response = self.communicator.send_request(
+                "struct_definition_set",
+                {"struct_name": struct_name, "struct_definition": struct_definition},
+            )
+
+            if "error" in response:
+                return f"Error setting struct definition for struct '{struct_name}': {response['error']}"
+
+            success = response.get("success", False)
+            message = response.get("message", "")
+
+            if success:
+                return (
+                    f"Successfully set definition for struct '{struct_name}': {message}"
+                )
+            else:
+                return f"Failed to set definition for struct '{struct_name}': {message}"
+        except Exception as e:
+            self.logger.error(f"error: {str(e)}", exc_info=True)
+            return f"Error setting definition for struct '{struct_name}': {str(e)}"
+
 
 async def serve() -> None:
     logger = logging.getLogger(__name__)
@@ -630,6 +685,16 @@ async def serve() -> None:
                 "Add a comment to a specific line in the function's decompiled pseudocode",
                 PseudocodeCommentAdd,
             ],
+            [
+                IDATools.STRUCT_DEFINITION_GET,
+                "Get the definition of a struct defined in the IDA database by its name",
+                StructDefinitionGet,
+            ],
+            [
+                IDATools.STRUCT_DEFINITION_SET,
+                "Create or update the definition of a struct in the IDA database by its name and struct definition (C syntax)",
+                StructDefinitionSet,
+            ],
         ]
 
         tools_ret = []
@@ -700,6 +765,14 @@ async def serve() -> None:
             IDATools.PSEUDOCODE_COMMENT_ADD: [
                 ida_functions.pseudocode_comment_add,
                 ["function_name", "line_number", "comment", "is_repeatable"],
+            ],
+            IDATools.STRUCT_DEFINITION_GET: [
+                ida_functions.struct_definition_get,
+                ["struct_name"],
+            ],
+            IDATools.STRUCT_DEFINITION_SET: [
+                ida_functions.struct_definition_set,
+                ["struct_name", "struct_definition"],
             ],
         }
 
