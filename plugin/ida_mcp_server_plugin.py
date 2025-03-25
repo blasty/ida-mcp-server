@@ -1025,7 +1025,7 @@ class IDAMCPServer:
                 if widget_type == idaapi.BWN_PSEUDOCODE:
                     vu = idaapi.get_widget_vdui(current_widget)
                     if vu:
-                        vu.view_refresh(True)
+                        vu.refresh_view(True)
 
             # iterate over all pseudocode views (Pseudocode-A, Pseudocode-B, ...)
             for i in range(5):
@@ -1034,7 +1034,7 @@ class IDAMCPServer:
                 if widget:
                     vu = idaapi.get_widget_vdui(widget)
                     if vu:
-                        vu.view_refresh(True)
+                        vu.refresh_view(True)
 
             return {"success": True, "message": "Views refreshed successfully"}
         except Exception as e:
