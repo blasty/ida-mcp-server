@@ -386,7 +386,7 @@ class IDAMCPServer:
             segment_class = ida_segment.get_segm_class(segment)
 
             tinfo = idaapi.tinfo_t()
-            guess_type = idaapi.guess_tinfo(var_addr, tinfo)
+            guess_type = idaapi.guess_tinfo(tinfo, var_addr)
             type_str = tinfo.get_type_name() if guess_type else "unknown"
 
             size = ida_bytes.get_item_size(var_addr)

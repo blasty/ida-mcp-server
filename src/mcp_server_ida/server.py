@@ -271,7 +271,7 @@ class IDAProFunctions:
                 "function_decompile", {"function_name": function_name}
             )
 
-            self.logger.debug(f"反编译响应: {response}")
+            self.logger.debug(f"response: {response}")
 
             if "error" in response:
                 return f"Error retrieving decompiled code for function '{function_name}': {response['error']}"
