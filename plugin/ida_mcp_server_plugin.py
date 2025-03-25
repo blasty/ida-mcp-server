@@ -161,21 +161,21 @@ class IDAMCPServer:
 
     def handle_client(self, client_socket, client_id):
         request_noarg_lut = {
-            "get_current_function_assembly": self.get_current_function_assembly,
-            "get_current_function_decompiled": self.get_current_function_decompiled,
+            "function_disassemble_current": self.function_disassemble_current,
+            "function_decompile_current": self.function_decompile_current,
         }
 
         request_arg_lut = {
-            "get_function_assembly": self.get_function_assembly,
-            "get_function_decompiled": self.get_function_decompiled,
-            "get_global_variable": self.get_global_variable,
-            "rename_global_variable": self.rename_global_variable,
-            "rename_function": self.rename_function,
-            "add_comment": self.add_comment,
-            "rename_local_variable": self.rename_local_variable,
-            "add_function_comment": self.add_function_comment,
-            "add_pseudocode_line_comment": self.add_pseudocode_line_comment,
-            "refresh_view": self.refresh_view,
+            "function_disassemble": self.function_disassemble,
+            "function_decompile": self.function_decompile,
+            "variable_global_get": self.variable_global_get,
+            "variable_global_rename": self.variable_global_rename,
+            "function_rename": self.function_rename,
+            "address_comment_add": self.address_comment_add,
+            "variable_local_rename": self.variable_local_rename,
+            "function_comment_add": self.function_comment_add,
+            "pseudocode_comment_add": self.pseudocode_comment_add,
+            "view_refresh": self.view_refresh,
         }
 
         try:
@@ -275,17 +275,17 @@ class IDAMCPServer:
                 pass
             print(f"Client #{client_id} connection closed")
 
-    def get_function_assembly(self, data):
+    def function_disassemble(self, data):
         function_name = data.get("function_name", "")
 
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._get_function_assembly_impl, function_name),
+            lambda: wrapper(self._function_disassemble_impl, function_name),
             idaapi.MFF_READ,
         )
         return wrapper.result
 
-    def _get_function_assembly_impl(self, function_name):
+    def _function_disassemble_impl(self, function_name):
         try:
             func_addr = ida_name.get_name_ea(0, function_name)
             if func_addr == idaapi.BADADDR:
@@ -309,17 +309,17 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"error": str(e)}
 
-    def get_function_decompiled(self, data):
+    def function_decompile(self, data):
         function_name = data.get("function_name", "")
 
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._get_function_decompiled_impl, function_name),
+            lambda: wrapper(self._function_decompile_impl, function_name),
             idaapi.MFF_READ,
         )
         return wrapper.result
 
-    def _get_function_decompiled_impl(self, function_name):
+    def _function_decompile_impl(self, function_name):
         try:
             func_addr = ida_name.get_name_ea(0, function_name)
             if func_addr == idaapi.BADADDR:
@@ -362,17 +362,17 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"error": str(e)}
 
-    def get_global_variable(self, data):
+    def variable_global_get(self, data):
         variable_name = data.get("variable_name", "")
 
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._get_global_variable_impl, variable_name),
+            lambda: wrapper(self._variable_global_get_impl, variable_name),
             idaapi.MFF_READ,
         )
         return wrapper.result
 
-    def _get_global_variable_impl(self, variable_name):
+    def _variable_global_get_impl(self, variable_name):
         try:
             var_addr = ida_name.get_name_ea(0, variable_name)
             if var_addr == idaapi.BADADDR:
@@ -429,14 +429,14 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"error": str(e)}
 
-    def get_current_function_assembly(self):
+    def function_disassemble_current(self):
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._get_current_function_assembly_impl), idaapi.MFF_READ
+            lambda: wrapper(self._function_disassemble_current_impl), idaapi.MFF_READ
         )
         return wrapper.result
 
-    def _get_current_function_assembly_impl(self):
+    def _function_disassemble_current_impl(self):
         try:
             current_addr = idaapi.get_screen_ea()
             if current_addr == idaapi.BADADDR:
@@ -468,14 +468,14 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"error": str(e)}
 
-    def get_current_function_decompiled(self):
+    def function_decompile_current(self):
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._get_current_function_decompiled_impl), idaapi.MFF_READ
+            lambda: wrapper(self._function_decompile_current_impl), idaapi.MFF_READ
         )
         return wrapper.result
 
-    def _get_current_function_decompiled_impl(self):
+    def _function_decompile_current_impl(self):
         try:
             current_addr = idaapi.get_screen_ea()
             if current_addr == idaapi.BADADDR:
@@ -526,19 +526,18 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"error": str(e)}
 
-    def rename_global_variable(self, data):
-        """重命名全局变量"""
+    def variable_global_rename(self, data):
         old_name = data.get("old_name", "")
         new_name = data.get("new_name", "")
 
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._rename_global_variable_impl, old_name, new_name),
+            lambda: wrapper(self._variable_global_rename_impl, old_name, new_name),
             idaapi.MFF_WRITE,
         )
         return wrapper.result
 
-    def _rename_global_variable_impl(self, old_name, new_name):
+    def _variable_global_rename_impl(self, old_name, new_name):
         try:
             var_addr = ida_name.get_name_ea(0, old_name)
             if var_addr == idaapi.BADADDR:
@@ -556,7 +555,7 @@ class IDAMCPServer:
                     "message": f"Failed to rename variable, possibly due to invalid name format or other IDA restrictions",
                 }
 
-            self._refresh_view_impl()
+            self._view_refresh_impl()
 
             return {
                 "success": True,
@@ -568,18 +567,18 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"success": False, "message": str(e)}
 
-    def rename_function(self, data):
+    def function_rename(self, data):
         old_name = data.get("old_name", "")
         new_name = data.get("new_name", "")
 
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._rename_function_impl, old_name, new_name),
+            lambda: wrapper(self._function_rename_impl, old_name, new_name),
             idaapi.MFF_WRITE,
         )
         return wrapper.result
 
-    def _rename_function_impl(self, old_name, new_name):
+    def _function_rename_impl(self, old_name, new_name):
         try:
             func_addr = ida_name.get_name_ea(0, old_name)
             if func_addr == idaapi.BADADDR:
@@ -601,7 +600,7 @@ class IDAMCPServer:
                     "message": f"Failed to rename function, possibly due to invalid name format or other IDA restrictions",
                 }
 
-            self._refresh_view_impl()
+            self._view_refresh_impl()
 
             return {
                 "success": True,
@@ -613,19 +612,21 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"success": False, "message": str(e)}
 
-    def add_comment(self, data):
+    def address_comment_add(self, data):
         address = data.get("address", "")
         comment = data.get("comment", "")
         is_repeatable = data.get("is_repeatable", False)
 
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
-            lambda: wrapper(self._add_comment_impl, address, comment, is_repeatable),
+            lambda: wrapper(
+                self._address_comment_add_impl, address, comment, is_repeatable
+            ),
             idaapi.MFF_WRITE,
         )
         return wrapper.result
 
-    def _add_comment_impl(self, address, comment, is_repeatable):
+    def _address_comment_add_impl(self, address, comment, is_repeatable):
         try:
             if isinstance(address, str):
                 if address.startswith("0x"):
@@ -652,7 +653,7 @@ class IDAMCPServer:
 
             result = idc.set_cmt(addr, comment, is_repeatable)
             if result:
-                self._refresh_view_impl()
+                self._view_refresh_impl()
                 comment_type = "repeatable" if is_repeatable else "regular"
                 return {
                     "success": True,
@@ -669,7 +670,7 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"success": False, "message": str(e)}
 
-    def rename_local_variable(self, data):
+    def variable_local_rename(self, data):
         function_name = data.get("function_name", "")
         old_name = data.get("old_name", "")
         new_name = data.get("new_name", "")
@@ -677,13 +678,13 @@ class IDAMCPServer:
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
             lambda: wrapper(
-                self._rename_local_variable_impl, function_name, old_name, new_name
+                self._variable_local_rename_impl, function_name, old_name, new_name
             ),
             idaapi.MFF_WRITE,
         )
         return wrapper.result
 
-    def _rename_local_variable_impl(self, function_name, old_name, new_name):
+    def _variable_local_rename_impl(self, function_name, old_name, new_name):
         try:
             if not function_name:
                 return {"success": False, "message": "Function name cannot be empty"}
@@ -747,7 +748,7 @@ class IDAMCPServer:
                 renamed = True
 
             if renamed:
-                self._refresh_view_impl()
+                self._view_refresh_impl()
                 return {
                     "success": True,
                     "message": f"Local variable renamed from '{old_name}' to '{new_name}' in function '{function_name}'",
@@ -763,7 +764,7 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"success": False, "message": str(e)}
 
-    def add_function_comment(self, data):
+    def function_comment_add(self, data):
         function_name = data.get("function_name", "")
         comment = data.get("comment", "")
         is_repeatable = data.get("is_repeatable", False)
@@ -771,13 +772,13 @@ class IDAMCPServer:
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
             lambda: wrapper(
-                self._add_function_comment_impl, function_name, comment, is_repeatable
+                self._function_comment_add_impl, function_name, comment, is_repeatable
             ),
             idaapi.MFF_WRITE,
         )
         return wrapper.result
 
-    def _add_function_comment_impl(self, function_name, comment, is_repeatable):
+    def _function_comment_add_impl(self, function_name, comment, is_repeatable):
         try:
             if not function_name:
                 return {"success": False, "message": "Function name cannot be empty"}
@@ -801,7 +802,7 @@ class IDAMCPServer:
             result = idc.set_func_cmt(func_addr, comment, is_repeatable)
 
             if result:
-                self._refresh_view_impl()
+                self._view_refresh_impl()
                 comment_type = "repeatable" if is_repeatable else "regular"
                 return {
                     "success": True,
@@ -818,7 +819,7 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"success": False, "message": str(e)}
 
-    def add_pseudocode_line_comment(self, data):
+    def pseudocode_comment_add(self, data):
         """Add a comment to a specific line in the function's decompiled pseudocode"""
         function_name = data.get("function_name", "")
         line_number = data.get("line_number", 0)
@@ -828,7 +829,7 @@ class IDAMCPServer:
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
             lambda: wrapper(
-                self._add_pseudocode_line_comment_impl,
+                self._pseudocode_comment_add_impl,
                 function_name,
                 line_number,
                 comment,
@@ -838,7 +839,7 @@ class IDAMCPServer:
         )
         return wrapper.result
 
-    def _add_pseudocode_line_comment_impl(
+    def _pseudocode_comment_add_impl(
         self, function_name, line_number, comment, is_repeatable
     ):
         """
@@ -922,7 +923,7 @@ class IDAMCPServer:
             cfunc.set_user_cmt(loc, comment)
             cfunc.save_user_cmts()
 
-            self._refresh_view_impl()
+            self._view_refresh_impl()
 
             comment_type = "repeatable" if is_repeatable else "regular"
             return {
@@ -935,12 +936,12 @@ class IDAMCPServer:
             traceback.print_exc()
             return {"success": False, "message": str(e)}
 
-    def refresh_view(self, data):
+    def view_refresh(self, data):
         wrapper = IDASyncWrapper()
-        idaapi.execute_sync(lambda: wrapper(self._refresh_view_impl), idaapi.MFF_WRITE)
+        idaapi.execute_sync(lambda: wrapper(self._view_refresh_impl), idaapi.MFF_WRITE)
         return wrapper.result
 
-    def _refresh_view_impl(self):
+    def _view_refresh_impl(self):
         try:
             idaapi.refresh_idaview_anyway()
 
@@ -950,17 +951,16 @@ class IDAMCPServer:
                 if widget_type == idaapi.BWN_PSEUDOCODE:
                     vu = idaapi.get_widget_vdui(current_widget)
                     if vu:
-                        vu.refresh_view(True)
+                        vu.view_refresh(True)
 
+            # iterate over all pseudocode views (Pseudocode-A, Pseudocode-B, ...)
             for i in range(5):
-                widget_name = (
-                    f"Pseudocode-{chr(65+i)}"  # Pseudocode-A, Pseudocode-B, ...
-                )
+                widget_name = f"Pseudocode-{chr(65+i)}"
                 widget = idaapi.find_widget(widget_name)
                 if widget:
                     vu = idaapi.get_widget_vdui(widget)
                     if vu:
-                        vu.refresh_view(True)
+                        vu.view_refresh(True)
 
             return {"success": True, "message": "Views refreshed successfully"}
         except Exception as e:

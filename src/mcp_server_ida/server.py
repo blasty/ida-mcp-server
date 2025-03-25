@@ -14,65 +14,63 @@ from mcp.types import (
 from enum import Enum
 from pydantic import BaseModel
 
-# 修改请求模型
-class GetFunctionAssembly(BaseModel):
-    function_name: str
-
-class GetFunctionDecompiled(BaseModel):
-    function_name: str
-
-class GetGlobalVariable(BaseModel):
+class VariableGlobalGet(BaseModel):
     variable_name: str
 
-class GetCurrentFunctionAssembly(BaseModel):
-    pass
+class VariableGlobalRename(BaseModel):
+    old_name: str
+    new_name: str
 
-class GetCurrentFunctionDecompiled(BaseModel):
-    pass
-
-class RenameLocalVariable(BaseModel):
+class VariableLocalRename(BaseModel):
     function_name: str
     old_name: str
     new_name: str
 
-class RenameGlobalVariable(BaseModel):
+class FunctionDisassemble(BaseModel):
+    function_name: str
+
+class FunctionDisassembleCurrent(BaseModel):
+    pass
+
+class FunctionDecompile(BaseModel):
+    function_name: str
+
+class FunctionDecompileCurrent(BaseModel):
+    pass
+
+class FunctionRename(BaseModel):
     old_name: str
     new_name: str
 
-class RenameFunction(BaseModel):
-    old_name: str
-    new_name: str
+class FunctionCommentAdd(BaseModel):
+    function_name: str
+    comment: str
+    is_repeatable: bool = False
 
-class AddComment(BaseModel):
+class AddressCommentAdd(BaseModel):
     address: str
     comment: str
     is_repeatable: bool = False
 
-class AddFunctionComment(BaseModel):
+class PseudocodeCommentAdd(BaseModel):
     function_name: str
+    line_number: int
     comment: str
     is_repeatable: bool = False
 
-class AddPseudocodeLineComment(BaseModel):
-    function_name: str
-    line_number: int  # Line number in the pseudocode
-    comment: str
-    is_repeatable: bool = False  # Whether comment should be repeated at all occurrences
-
 class IDATools(str, Enum):
-    GET_FUNCTION_ASSEMBLY = "ida_get_function_assembly"
-    GET_FUNCTION_DECOMPILED = "ida_get_function_decompiled"
-    GET_GLOBAL_VARIABLE = "ida_get_global_variable"
-    GET_CURRENT_FUNCTION_ASSEMBLY = "ida_get_current_function_assembly"
-    GET_CURRENT_FUNCTION_DECOMPILED = "ida_get_current_function_decompiled"
-    RENAME_LOCAL_VARIABLE = "ida_rename_local_variable"
-    RENAME_GLOBAL_VARIABLE = "ida_rename_global_variable"
-    RENAME_FUNCTION = "ida_rename_function"
-    ADD_COMMENT = "ida_add_comment"
-    ADD_FUNCTION_COMMENT = "ida_add_function_comment"
-    ADD_PSEUDOCODE_LINE_COMMENT = "ida_add_pseudocode_line_comment"
+    VARIABLE_GLOBAL_GET = "ida_variable_global_get",
+    VARIABLE_GLOBAL_RENAME = "ida_variable_global_rename",
+    VARIABLE_LOCAL_RENAME = "ida_variable_local_rename",
+    FUNCTION_DISASSEMBLE = "ida_function_disassemble",
+    FUNCTION_DISASSEMBLE_CURRENT = "ida_function_disassemble_current",
+    FUNCTION_DECOMPILE = "ida_function_decompile",
+    FUNCTION_DECOMPILE_CURRENT = "ida_function_decompile_current",
+    FUNCTION_RENAME = "ida_function_rename",
+    FUNCTION_COMMENT_ADD = "ida_function_comment_add",
+    ADDRESS_COMMENT_ADD = "ida_address_comment_add",
+    PSEUDOCODE_COMMENT_ADD = "ida_pseudocode_comment_add",
 
-# IDA Pro通信处理器
 class IDAProCommunicator:
     def __init__(self, host='localhost', port=5000):
         self.host = host
@@ -142,21 +140,21 @@ class IDAProCommunicator:
             data = self.receive_exactly(length)
             return data
         except Exception as e:
-            self.logger.error(f"接收消息时出错: {str(e)}")
+            self.logger.error(f"exception: {str(e)}")
             return None
     
     def receive_exactly(self, n: int) -> Optional[bytes]:
         data = b''
         while len(data) < n:
             chunk = self.sock.recv(min(n - len(data), 4096))
-            if not chunk:  # 连接已关闭
+            if not chunk:
                 return None
             data += chunk
         return data
     
     def send_request(self, request_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         if not self.ensure_connection():
-            return {"error": "无法连接到IDA Pro"}
+            return {"error": "not connected to IDA pro"}
         
         request_id = str(uuid.uuid4())
         self.request_count += 1
@@ -203,7 +201,7 @@ class IDAProCommunicator:
                 
         except Exception as e:
             self.logger.error(f"IDA pro communication error: {str(e)}")
-            self.disconnect()  # 出错后断开连接
+            self.disconnect()
             return {"error": str(e)}
     
     def ping(self):
@@ -215,7 +213,7 @@ class IDAProFunctions:
         self.communicator = communicator
         self.logger = logging.getLogger(__name__)
         
-    def get_function_assembly(self, function_name: str) -> str:
+    def function_disassemble(self, function_name: str) -> str:
         try:
             response = self.communicator.send_request(
                 "get_function_assembly", 
@@ -229,18 +227,18 @@ class IDAProFunctions:
             if assembly is None:
                 return f"Error: No assembly data returned for function '{function_name}'"
             if not isinstance(assembly, str):
-                self.logger.warning(f"Assembly数据类型不是字符串而是 {type(assembly).__name__}，尝试转换")
+                self.logger.warning(f"got type {type(assembly).__name__}，attempting conversion")
                 assembly = str(assembly)
             
             return f"Assembly code for function '{function_name}':\n{assembly}"
         except Exception as e:
-            self.logger.error(f"获取函数汇编时出错: {str(e)}", exc_info=True)
+            self.logger.error(f"error: {str(e)}", exc_info=True)
             return f"Error retrieving assembly for function '{function_name}': {str(e)}"
     
-    def get_function_decompiled(self, function_name: str) -> str:
+    def function_decompile(self, function_name: str) -> str:
         try:
             response = self.communicator.send_request(
-                "get_function_decompiled", 
+                "function_decompile", 
                 {"function_name": function_name}
             )
             
@@ -266,13 +264,13 @@ class IDAProFunctions:
             
             return f"Decompiled code for function '{function_name}':\n{decompiled_code}"
         except Exception as e:
-            self.logger.error(f"获取函数反编译代码时出错: {str(e)}", exc_info=True)
+            self.logger.error(f"error: {str(e)}", exc_info=True)
             return f"Error retrieving decompiled code for function '{function_name}': {str(e)}"
     
-    def get_global_variable(self, variable_name: str) -> str:
+    def variable_global_get(self, variable_name: str) -> str:
         try:
             response = self.communicator.send_request(
-                "get_global_variable", 
+                "variable_global_get", 
                 {"variable_name": variable_name}
             )
             
@@ -295,13 +293,13 @@ class IDAProFunctions:
             
             return f"Global variable '{variable_name}':\n{variable_info}"
         except Exception as e:
-            self.logger.error(f"获取全局变量时出错: {str(e)}", exc_info=True)
+            self.logger.error(f"error: {str(e)}", exc_info=True)
             return f"Error retrieving global variable '{variable_name}': {str(e)}"
     
-    def get_current_function_assembly(self) -> str:
+    def function_disasssemble_current(self) -> str:
         try:
             response = self.communicator.send_request(
-                "get_current_function_assembly", 
+                "function_disasssemble_current", 
                 {}
             )
             
@@ -322,10 +320,10 @@ class IDAProFunctions:
             self.logger.error(f"error retrieving assembly for current function: {str(e)}", exc_info=True)
             return f"Error retrieving assembly for current function: {str(e)}"
     
-    def get_current_function_decompiled(self) -> str:
+    def function_decompile_current(self) -> str:
         try:
             response = self.communicator.send_request(
-                "get_current_function_decompiled", 
+                "function_decompile_current", 
                 {}
             )
             
@@ -350,10 +348,10 @@ class IDAProFunctions:
             self.logger.error(f"error retrieving decompiled code for current function: {str(e)}", exc_info=True)
             return f"Error retrieving decompiled code for current function: {str(e)}"
 
-    def rename_local_variable(self, function_name: str, old_name: str, new_name: str) -> str:
+    def variable_local_rename(self, function_name: str, old_name: str, new_name: str) -> str:
         try:
             response = self.communicator.send_request(
-                "rename_local_variable", 
+                "variable_local_rename", 
                 {"function_name": function_name, "old_name": old_name, "new_name": new_name}
             )
             
@@ -371,10 +369,10 @@ class IDAProFunctions:
             self.logger.error(f"error renaming local variable: {str(e)}", exc_info=True)
             return f"Error renaming local variable from '{old_name}' to '{new_name}' in function '{function_name}': {str(e)}"
 
-    def rename_global_variable(self, old_name: str, new_name: str) -> str:
+    def variable_global_rename(self, old_name: str, new_name: str) -> str:
         try:
             response = self.communicator.send_request(
-                "rename_global_variable", 
+                "variable_global_rename", 
                 {"old_name": old_name, "new_name": new_name}
             )
             
@@ -392,10 +390,10 @@ class IDAProFunctions:
             self.logger.error(f"error renaming global variable: {str(e)}", exc_info=True)
             return f"Error renaming global variable from '{old_name}' to '{new_name}': {str(e)}"
 
-    def rename_function(self, old_name: str, new_name: str) -> str:
+    def function_rename(self, old_name: str, new_name: str) -> str:
         try:
             response = self.communicator.send_request(
-                "rename_function", 
+                "function_rename", 
                 {"old_name": old_name, "new_name": new_name}
             )
             
@@ -414,32 +412,11 @@ class IDAProFunctions:
             self.logger.error(f"error renaming function: {str(e)}", exc_info=True)
             return f"Error renaming function from '{old_name}' to '{new_name}': {str(e)}"
 
-    def add_comment(self, address: str, comment: str, is_repeatable: bool = False) -> str:
-        try:
-            response = self.communicator.send_request(
-                "add_comment", 
-                {"address": address, "comment": comment, "is_repeatable": is_repeatable}
-            )
-            
-            if "error" in response:
-                return f"Error adding comment at address '{address}': {response['error']}"
-            
-            success = response.get("success", False)
-            message = response.get("message", "")
-            
-            if success:
-                comment_type = "repeatable" if is_repeatable else "regular"
-                return f"Successfully added {comment_type} comment at address '{address}': {message}"
-            else:
-                return f"Failed to add comment at address '{address}': {message}"
-        except Exception as e:
-            self.logger.error(f"error adding comment: {str(e)}", exc_info=True)
-            return f"Error adding comment at address '{address}': {str(e)}"
 
-    def add_function_comment(self, function_name: str, comment: str, is_repeatable: bool = False) -> str:
+    def function_comment_add(self, function_name: str, comment: str, is_repeatable: bool = False) -> str:
         try:
             response = self.communicator.send_request(
-                "add_function_comment", 
+                "function_comment_add", 
                 {"function_name": function_name, "comment": comment, "is_repeatable": is_repeatable}
             )
             
@@ -458,10 +435,32 @@ class IDAProFunctions:
             self.logger.error(f"error adding function annotation: {str(e)}", exc_info=True)
             return f"Error adding comment to function '{function_name}': {str(e)}"
 
-    def add_pseudocode_line_comment(self, function_name: str, line_number: int, comment: str, is_repeatable: bool = False) -> str:
+    def address_comment_add(self, address: str, comment: str, is_repeatable: bool = False) -> str:
         try:
             response = self.communicator.send_request(
-                "add_pseudocode_line_comment",
+                "address_comment_add", 
+                {"address": address, "comment": comment, "is_repeatable": is_repeatable}
+            )
+            
+            if "error" in response:
+                return f"Error adding comment at address '{address}': {response['error']}"
+            
+            success = response.get("success", False)
+            message = response.get("message", "")
+            
+            if success:
+                comment_type = "repeatable" if is_repeatable else "regular"
+                return f"Successfully added {comment_type} comment at address '{address}': {message}"
+            else:
+                return f"Failed to add comment at address '{address}': {message}"
+        except Exception as e:
+            self.logger.error(f"error adding comment: {str(e)}", exc_info=True)
+            return f"Error adding comment at address '{address}': {str(e)}"
+
+    def pseudocode_comment_add(self, function_name: str, line_number: int, comment: str, is_repeatable: bool = False) -> str:
+        try:
+            response = self.communicator.send_request(
+                "pseudocode_comment_add",
                 {
                     "function_name": function_name,
                     "line_number": line_number,
@@ -503,63 +502,30 @@ async def serve() -> None:
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name=IDATools.GET_FUNCTION_ASSEMBLY,
-                description="Get assembly code for a function by name",
-                inputSchema=GetFunctionAssembly.schema(),
-            ),
-            Tool(
-                name=IDATools.GET_FUNCTION_DECOMPILED,
-                description="Get decompiled pseudocode for a function by name",
-                inputSchema=GetFunctionDecompiled.schema(),
-            ),
-            Tool(
-                name=IDATools.GET_GLOBAL_VARIABLE,
-                description="Get information about a global variable by name",
-                inputSchema=GetGlobalVariable.schema(),
-            ),
-            Tool(
-                name=IDATools.GET_CURRENT_FUNCTION_ASSEMBLY,
-                description="Get assembly code for the function at the current cursor position",
-                inputSchema=GetCurrentFunctionAssembly.schema(),
-            ),
-            Tool(
-                name=IDATools.GET_CURRENT_FUNCTION_DECOMPILED,
-                description="Get decompiled pseudocode for the function at the current cursor position",
-                inputSchema=GetCurrentFunctionDecompiled.schema(),
-            ),
-            Tool(
-                name=IDATools.RENAME_LOCAL_VARIABLE,
-                description="Rename a local variable within a function in the IDA database",
-                inputSchema=RenameLocalVariable.schema(),
-            ),
-            Tool(
-                name=IDATools.RENAME_GLOBAL_VARIABLE,
-                description="Rename a global variable in the IDA database",
-                inputSchema=RenameGlobalVariable.schema(),
-            ),
-            Tool(
-                name=IDATools.RENAME_FUNCTION,
-                description="Rename a function in the IDA database",
-                inputSchema=RenameFunction.schema(),
-            ),
-            Tool(
-                name=IDATools.ADD_COMMENT,
-                description="Add a comment at a specific address in the IDA database",
-                inputSchema=AddComment.schema(),
-            ),
-            Tool(
-                name=IDATools.ADD_FUNCTION_COMMENT,
-                description="Add a comment to a function in the IDA database",
-                inputSchema=AddFunctionComment.schema(),
-            ),
-            Tool(
-                name=IDATools.ADD_PSEUDOCODE_LINE_COMMENT,
-                description="Add a comment to a specific line in the function's decompiled pseudocode",
-                inputSchema=AddPseudocodeLineComment.schema(),
-            ),
+        tools = [
+            [ IDATools.VARIABLE_GLOBAL_GET, "Get information about a global variable by name", VariableGlobalGet ],
+            [ IDATools.VARIABLE_GLOBAL_RENAME, "Rename a global variable in the IDA database", VariableGlobalRename ],
+            [ IDATools.VARIABLE_LOCAL_RENAME, "Rename a local variable within a function in the IDA database", VariableLocalRename ],
+            [ IDATools.FUNCTION_DISASSEMBLE, "Get assembly code for a function by name", FunctionDisassemble ],
+            [ IDATools.FUNCTION_DISASSEMBLE_CURRENT, "Get assembly code for the function at the current cursor position", FunctionDisassembleCurrent ],
+            [ IDATools.FUNCTION_DECOMPILE, "Get decompiled pseudocode for a function by name", FunctionDecompile ],
+            [ IDATools.FUNCTION_DECOMPILE_CURRENT, "Get decompiled pseudocode for the function at the current cursor position", FunctionDecompileCurrent ],
+            [ IDATools.FUNCTION_RENAME, "Rename a function in the IDA database", FunctionRename ],
+            [ IDATools.FUNCTION_COMMENT_ADD, "Add a comment to a function in the IDA database", FunctionCommentAdd ],
+            [ IDATools.ADDRESS_COMMENT_ADD, "Add a comment at a specific address in the IDA database", AddressCommentAdd ],
+            [ IDATools.PSEUDOCODE_COMMENT_ADD, "Add a comment to a specific line in the function's decompiled pseudocode", PseudocodeCommentAdd ], 
         ]
+
+        tools_ret = []
+
+        for tool in tools:
+            tool_ret = Tool(
+                name=tool[0],
+                description=tool[1],
+                inputSchema=tool[2].schema(),
+            )
+            tools_ret.append(tool_ret)
+        return tools_ret
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> List[TextContent]:
@@ -571,43 +537,43 @@ async def serve() -> None:
             
         try:
             match name:
-                case IDATools.GET_FUNCTION_ASSEMBLY:
-                    assembly = ida_functions.get_function_assembly(arguments["function_name"])
+                case IDATools.FUNCTION_DISASSEMBLE:
+                    assembly = ida_functions.function_disassemble(arguments["function_name"])
                     return [TextContent(
                         type="text",
                         text=assembly
                     )]
 
-                case IDATools.GET_FUNCTION_DECOMPILED:
-                    decompiled = ida_functions.get_function_decompiled(arguments["function_name"])
+                case IDATools.FUNCTION_DECOMPILE:
+                    decompiled = ida_functions.function_decompile(arguments["function_name"])
                     return [TextContent(
                         type="text",
                         text=decompiled
                     )]
 
-                case IDATools.GET_GLOBAL_VARIABLE:
-                    variable_info = ida_functions.get_global_variable(arguments["variable_name"])
+                case IDATools.VARIABLE_GLOBAL_GET:
+                    variable_info = ida_functions.variable_global_get(arguments["variable_name"])
                     return [TextContent(
                         type="text",
                         text=variable_info
                     )]
                     
-                case IDATools.GET_CURRENT_FUNCTION_ASSEMBLY:
-                    assembly = ida_functions.get_current_function_assembly()
+                case IDATools.FUNCTION_DISASSEMBLE_CURRENT:
+                    assembly = ida_functions.function_disasssemble_current()
                     return [TextContent(
                         type="text",
                         text=assembly
                     )]
                 
-                case IDATools.GET_CURRENT_FUNCTION_DECOMPILED:
-                    decompiled = ida_functions.get_current_function_decompiled()
+                case IDATools.FUNCTION_DECOMPILE_CURRENT:
+                    decompiled = ida_functions.function_decompile_current()
                     return [TextContent(
                         type="text",
                         text=decompiled
                     )]
 
-                case IDATools.RENAME_LOCAL_VARIABLE:
-                    result = ida_functions.rename_local_variable(
+                case IDATools.VARIABLE_LOCAL_RENAME:
+                    result = ida_functions.variable_local_rename(
                         arguments["function_name"],
                         arguments["old_name"], 
                         arguments["new_name"]
@@ -617,8 +583,8 @@ async def serve() -> None:
                         text=result
                     )]
 
-                case IDATools.RENAME_GLOBAL_VARIABLE:
-                    result = ida_functions.rename_global_variable(
+                case IDATools.VARIABLE_GLOBAL_RENAME:
+                    result = ida_functions.variable_global_rename(
                         arguments["old_name"], 
                         arguments["new_name"]
                     )
@@ -627,8 +593,8 @@ async def serve() -> None:
                         text=result
                     )]
 
-                case IDATools.RENAME_FUNCTION:
-                    result = ida_functions.rename_function(
+                case IDATools.FUNCTION_RENAME:
+                    result = ida_functions.function_rename(
                         arguments["old_name"], 
                         arguments["new_name"]
                     )
@@ -637,8 +603,8 @@ async def serve() -> None:
                         text=result
                     )]
 
-                case IDATools.ADD_COMMENT:
-                    result = ida_functions.add_comment(
+                case IDATools.ADDRESS_COMMENT_ADD:
+                    result = ida_functions.address_comment_add(
                         arguments["address"], 
                         arguments["comment"], 
                         arguments.get("is_repeatable", False)
@@ -648,8 +614,8 @@ async def serve() -> None:
                         text=result
                     )]
 
-                case IDATools.ADD_FUNCTION_COMMENT:
-                    result = ida_functions.add_function_comment(
+                case IDATools.FUNCTION_COMMENT_ADD:
+                    result = ida_functions.function_comment_add(
                         arguments["function_name"], 
                         arguments["comment"], 
                         arguments.get("is_repeatable", False)
@@ -659,8 +625,8 @@ async def serve() -> None:
                         text=result
                     )]
 
-                case IDATools.ADD_PSEUDOCODE_LINE_COMMENT:
-                    result = ida_functions.add_pseudocode_line_comment(
+                case IDATools.PSEUDOCODE_COMMENT_ADD:
+                    result = ida_functions.pseudocode_comment_add(
                         arguments["function_name"],
                         arguments["line_number"],
                         arguments["comment"],
