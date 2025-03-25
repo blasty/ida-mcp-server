@@ -35,8 +35,6 @@ class IDASyncWrapper(object):
 
 
 class IDACommunicator:
-    """IDA 通信类"""
-
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT):
         self.host = host
         self.port = port
@@ -56,7 +54,6 @@ class IDAMCPServer:
         self.client_counter = 0
 
     def start(self):
-        """启动Socket服务器"""
         if self.running:
             print("MCP Server already running")
             return False
@@ -66,7 +63,7 @@ class IDAMCPServer:
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
-            self.server_socket.settimeout(1.0)  # 设置超时，使服务器可以响应停止请求
+            self.server_socket.settimeout(1.0)
 
             self.running = True
             self.thread = threading.Thread(target=self.server_loop)
@@ -81,7 +78,6 @@ class IDAMCPServer:
             return False
 
     def stop(self):
-        """停止Socket服务器"""
         if not self.running:
             print("MCP Server is not running, no need to stop")
             return
@@ -113,11 +109,9 @@ class IDAMCPServer:
     def receive_message(self, client_socket) -> bytes:
         length_bytes = self.receive_exactly(client_socket, 4)
         if not length_bytes:
-            raise ConnectionError("连接已关闭")
+            raise ConnectionError("truncated read.")
 
         length = struct.unpack("!I", length_bytes)[0]
-
-        # 接收消息主体
         data = self.receive_exactly(client_socket, length)
         return data
 
@@ -125,8 +119,8 @@ class IDAMCPServer:
         data = b""
         while len(data) < n:
             chunk = client_socket.recv(min(n - len(data), 4096))
-            if not chunk:  # 连接已关闭
-                raise ConnectionError("连接关闭，无法接收完整数据")
+            if not chunk:
+                raise ConnectionError("connection closed. no data received.")
             data += chunk
         return data
 
@@ -166,17 +160,30 @@ class IDAMCPServer:
         print("Server loop ended")
 
     def handle_client(self, client_socket, client_id):
-        """处理客户端请求"""
-        try:
-            # 设置超时
-            client_socket.settimeout(30)
+        request_noarg_lut = {
+            "get_current_function_assembly": self.get_current_function_assembly,
+            "get_current_function_decompiled": self.get_current_function_decompiled,
+        }
 
+        request_arg_lut = {
+            "get_function_assembly": self.get_function_assembly,
+            "get_function_decompiled": self.get_function_decompiled,
+            "get_global_variable": self.get_global_variable,
+            "rename_global_variable": self.rename_global_variable,
+            "rename_function": self.rename_function,
+            "add_comment": self.add_comment,
+            "rename_local_variable": self.rename_local_variable,
+            "add_function_comment": self.add_function_comment,
+            "add_pseudocode_line_comment": self.add_pseudocode_line_comment,
+            "refresh_view": self.refresh_view,
+        }
+
+        try:
+            client_socket.settimeout(30)
             while self.running:
                 try:
-                    # 接收消息
                     data = self.receive_message(client_socket)
 
-                    # 解析请求
                     request = json.loads(data.decode("utf-8"))
                     request_type = request.get("type")
                     request_data = request.get("data", {})
@@ -187,49 +194,18 @@ class IDAMCPServer:
                         f"Client #{client_id} request: {request_type}, ID: {request_id}, Count: {request_count}"
                     )
 
-                    # 处理不同类型的请求
                     response = {
-                        "id": request_id,  # 返回相同的请求ID
-                        "count": request_count,  # 返回相同的请求计数
+                        "id": request_id,
+                        "count": request_count,
                     }
 
-                    if request_type == "get_function_assembly":
-                        result = self.get_function_assembly(request_data)
-                        response.update(result)
-                    elif request_type == "get_function_decompiled":
-                        result = self.get_function_decompiled(request_data)
-                        response.update(result)
-                    elif request_type == "get_global_variable":
-                        result = self.get_global_variable(request_data)
-                        response.update(result)
-                    elif request_type == "get_current_function_assembly":
-                        result = self.get_current_function_assembly()
-                        response.update(result)
-                    elif request_type == "get_current_function_decompiled":
-                        result = self.get_current_function_decompiled()
-                        response.update(result)
-                    elif request_type == "rename_global_variable":
-                        result = self.rename_global_variable(request_data)
-                        response.update(result)
-                    elif request_type == "rename_function":
-                        result = self.rename_function(request_data)
-                        response.update(result)
-                    elif request_type == "add_comment":
-                        result = self.add_comment(request_data)
-                        response.update(result)
-                    elif request_type == "rename_local_variable":
-                        result = self.rename_local_variable(request_data)
-                        response.update(result)
-                    elif request_type == "add_function_comment":
-                        result = self.add_function_comment(request_data)
-                        response.update(result)
-                    elif request_type == "ping":
+                    if request_type == "ping":
                         response["status"] = "pong"
-                    elif request_type == "add_pseudocode_line_comment":
-                        result = self.add_pseudocode_line_comment(request_data)
+                    elif request_type in request_noarg_lut:
+                        result = request_noarg_lut[request_type]()
                         response.update(result)
-                    elif request_type == "refresh_view":
-                        result = self.refresh_view(request_data)
+                    elif request_type in request_arg_lut:
+                        result = request_arg_lut[request_type](request_data)
                         response.update(result)
                     else:
                         response["error"] = f"Unknown request type: {request_type}"
@@ -310,7 +286,6 @@ class IDAMCPServer:
         return wrapper.result
 
     def _get_function_assembly_impl(self, function_name):
-        """在IDA主线程中实现获取函数汇编的逻辑"""
         try:
             func_addr = ida_name.get_name_ea(0, function_name)
             if func_addr == idaapi.BADADDR:
@@ -335,7 +310,6 @@ class IDAMCPServer:
             return {"error": str(e)}
 
     def get_function_decompiled(self, data):
-        """获取函数的反编译伪代码"""
         function_name = data.get("function_name", "")
 
         wrapper = IDASyncWrapper()
@@ -346,7 +320,6 @@ class IDAMCPServer:
         return wrapper.result
 
     def _get_function_decompiled_impl(self, function_name):
-        """在IDA主线程中实现获取函数反编译代码的逻辑"""
         try:
             func_addr = ida_name.get_name_ea(0, function_name)
             if func_addr == idaapi.BADADDR:
@@ -390,7 +363,6 @@ class IDAMCPServer:
             return {"error": str(e)}
 
     def get_global_variable(self, data):
-        """获取全局变量信息"""
         variable_name = data.get("variable_name", "")
 
         wrapper = IDASyncWrapper()
@@ -401,7 +373,6 @@ class IDAMCPServer:
         return wrapper.result
 
     def _get_global_variable_impl(self, variable_name):
-        """在IDA主线程中实现获取全局变量的逻辑"""
         try:
             var_addr = ida_name.get_name_ea(0, variable_name)
             if var_addr == idaapi.BADADDR:
@@ -459,7 +430,6 @@ class IDAMCPServer:
             return {"error": str(e)}
 
     def get_current_function_assembly(self):
-        """获取当前光标所在函数的汇编代码"""
         wrapper = IDASyncWrapper()
         idaapi.execute_sync(
             lambda: wrapper(self._get_current_function_assembly_impl), idaapi.MFF_READ
@@ -467,7 +437,6 @@ class IDAMCPServer:
         return wrapper.result
 
     def _get_current_function_assembly_impl(self):
-        """在IDA主线程中实现获取当前函数汇编的逻辑"""
         try:
             current_addr = idaapi.get_screen_ea()
             if current_addr == idaapi.BADADDR:
@@ -570,7 +539,6 @@ class IDAMCPServer:
         return wrapper.result
 
     def _rename_global_variable_impl(self, old_name, new_name):
-        """在IDA主线程中实现重命名全局变量的逻辑"""
         try:
             var_addr = ida_name.get_name_ea(0, old_name)
             if var_addr == idaapi.BADADDR:
@@ -601,7 +569,6 @@ class IDAMCPServer:
             return {"success": False, "message": str(e)}
 
     def rename_function(self, data):
-        """重命名函数"""
         old_name = data.get("old_name", "")
         new_name = data.get("new_name", "")
 
@@ -613,7 +580,6 @@ class IDAMCPServer:
         return wrapper.result
 
     def _rename_function_impl(self, old_name, new_name):
-        """在IDA主线程中实现重命名函数的逻辑"""
         try:
             func_addr = ida_name.get_name_ea(0, old_name)
             if func_addr == idaapi.BADADDR:
@@ -648,7 +614,6 @@ class IDAMCPServer:
             return {"success": False, "message": str(e)}
 
     def add_comment(self, data):
-        """添加注释"""
         address = data.get("address", "")
         comment = data.get("comment", "")
         is_repeatable = data.get("is_repeatable", False)
@@ -705,7 +670,6 @@ class IDAMCPServer:
             return {"success": False, "message": str(e)}
 
     def rename_local_variable(self, data):
-        """重命名函数内的局部变量"""
         function_name = data.get("function_name", "")
         old_name = data.get("old_name", "")
         new_name = data.get("new_name", "")
@@ -720,7 +684,6 @@ class IDAMCPServer:
         return wrapper.result
 
     def _rename_local_variable_impl(self, function_name, old_name, new_name):
-        """在IDA主线程中实现重命名函数内局部变量的逻辑"""
         try:
             if not function_name:
                 return {"success": False, "message": "Function name cannot be empty"}
@@ -801,7 +764,6 @@ class IDAMCPServer:
             return {"success": False, "message": str(e)}
 
     def add_function_comment(self, data):
-        """添加函数注释"""
         function_name = data.get("function_name", "")
         comment = data.get("comment", "")
         is_repeatable = data.get("is_repeatable", False)
@@ -982,7 +944,6 @@ class IDAMCPServer:
         try:
             idaapi.refresh_idaview_anyway()
 
-            # 刷新反编译视图
             current_widget = idaapi.get_current_widget()
             if current_widget:
                 widget_type = idaapi.get_widget_type(current_widget)
@@ -1023,7 +984,6 @@ class IDAMCPPlugin(idaapi.plugin_t):
         print(f"IDAMCPPlugin instance created")
 
     def init(self):
-        """插件初始化"""
         try:
             print(f"{PLUGIN_NAME} v{PLUGIN_VERSION} by {PLUGIN_AUTHOR}")
             print("Initializing plugin...")
@@ -1045,7 +1005,7 @@ class IDAMCPPlugin(idaapi.plugin_t):
             return idaapi.PLUGIN_SKIP
 
     def _delayed_server_start(self):
-        """延迟启动服务器，避免初始化竞争条件"""
+        # delayed server start to avoid initialization race conditions
         try:
             if not self.server or not self.server.running:
                 print("Delayed server start...")
@@ -1172,7 +1132,6 @@ class IDAMCPPlugin(idaapi.plugin_t):
             traceback.print_exc()
 
     def term(self):
-        """插件终止"""
         try:
             if self.server and self.server.running:
                 print("Terminating plugin: stopping server")
