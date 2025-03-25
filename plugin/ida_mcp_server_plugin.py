@@ -347,6 +347,8 @@ class IDAMCPServer:
             if not ida_hexrays.init_hexrays_plugin():
                 return {"error": "Hex-Rays decompiler not available"}
 
+            ida_hexrays.open_pseudocode(func_addr, 0)
+
             cfunc = ida_hexrays.decompile(func_addr)
             if not cfunc:
                 return {"error": "Failed to decompile function"}
@@ -780,6 +782,8 @@ class IDAMCPServer:
                     "message": f"Function '{function_name}' not found",
                 }
 
+            ida_hexrays.open_pseudocode(func_addr, 0)
+
             func = ida_funcs.get_func(func_addr)
             if not func:
                 return {
@@ -866,6 +870,8 @@ class IDAMCPServer:
                     "message": f"Function '{function_name}' not found",
                 }
 
+            ida_hexrays.open_pseudocode(func_addr, 0)
+
             func = ida_funcs.get_func(func_addr)
             if not func:
                 return {
@@ -937,6 +943,8 @@ class IDAMCPServer:
                     "success": False,
                     "message": f"Function '{function_name}' not found",
                 }
+
+            ida_hexrays.open_pseudocode(func_addr, 0)
 
             # Check if it's a function
             func = ida_funcs.get_func(func_addr)
